@@ -1,12 +1,15 @@
-exports.upload = async (req, res) => {
+exports.infoFileUpload = async (req, res, next) => {
     try {
-        res.status(200).json({
+        if (!req.file) {
+            return res.status(400).json({ message: 'Không có ảnh nào được tải lên'});
+        }
+        return res.status(200).json({
             message: "Tải ảnh lên thành công",
             image: req.file.path,
             folder: req.file.folder
         })
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        returnres.status(500).json({ message: 'Tải ảnh lên thất bại' });
     }
 }
