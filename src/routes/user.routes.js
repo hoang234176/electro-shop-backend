@@ -15,5 +15,6 @@ router.post(
 )
 
 router.put('/change-password', verifyToken, userController.changePassword)
+router.put('/delete-account', verifyToken, userController.deleteAccount)
 
 module.exports = router;

@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 
 exports.userInfo = async (req, res) => {
     try {
-        const user = await User.findById(req.user.user_id).select('fullname email phone address createdAt');
+        const user = await User.findById(req.user.user_id).select('fullname email phone address createdAt');        
         res.status(200).json(user);
     } catch (error) {
         console.error(error);
@@ -49,7 +49,7 @@ exports.updateUser = async (req, res) => {
         }
 
         if (req.file) {
-            infoUpdate.avatar = req.file.path; 
+            infoUpdate.avatar = req.file.secure_url || req.file.path; 
             
             // Tìm thông tin user hiện tại (chỉ lấy trường avatar) để lấy URL ảnh cũ
             const currentUser = await User.findById(userId).select('avatar');
@@ -63,11 +63,11 @@ exports.updateUser = async (req, res) => {
         }
         
         // --- NẾU MỌI THỨ HỢP LỆ THÌ MỚI LƯU DB ---
-        const user = await User.findByIdAndUpdate(userId, infoUpdate, { new: true });
+        const user = await User.findByIdAndUpdate(userId, infoUpdate, { returnDocument: 'after' });
         
         return res.status(200).json({ 
             message: 'Cập nhật thành công',
-            avatarURL: req.file.path
+            avatarURL: user.avatar // Lấy trực tiếp từ database sau khi đã update
         });
     } catch (error) {
         console.error(error);
@@ -104,4 +104,29 @@ exports.changePassword = async (req, res) => {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
     }
+}
+
+exports.deleteAccount = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+        }
+
+        // Nếu avatar của user không phải là avatar mặc định thì mới xóa trên Cloudinary
+        if (user.avatar && user.avatar !== process.env.DEFAULT_AVATAR_URL) {
+            const publicId = getPublicIdFromUrl(user.avatar);  
+            if (publicId) {
+                console.log('Xóa ảnh avatar của user trên Cloudinary:', publicId);
+                await cloudinary.uploader.destroy(publicId);
+            }
+        }
+
+        await User.findByIdAndDelete(userId);
+        res.status(200).json({ message: 'Tài khoản đã được xóa thành công' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    }       
 }

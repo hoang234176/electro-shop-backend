@@ -367,3 +367,63 @@ exports.handleVNPayIPN = async (req, res) => {
         return res.status(200).json({RspCode: '97', Message: 'Fail checksum'});
     }
 };
+
+// Controller xử lý đồng bộ khi Redirect từ VNPay về (Return URL)
+exports.vnpayReturn = async (req, res) => {
+    try {
+        let vnp_Params = req.query;
+        const secureHash = vnp_Params['vnp_SecureHash'];
+
+        delete vnp_Params['vnp_SecureHash'];
+        delete vnp_Params['vnp_SecureHashType'];
+
+        vnp_Params = sortObject(vnp_Params);
+        const secretKey = process.env.VNP_HASH_SECRET?.trim();
+        const signData = Object.entries(vnp_Params).map(([key, val]) => `${key}=${val}`).join('&');
+        const hmac = crypto.createHmac("sha512", secretKey || "");
+        const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest("hex");     
+
+        if (secureHash === signed) {
+            const orderId = vnp_Params['vnp_TxnRef'];
+            const rspCode = vnp_Params['vnp_ResponseCode'];
+            const transId = vnp_Params['vnp_TransactionNo'];
+            const payDate = vnp_Params['vnp_PayDate'];
+
+            const order = await Order.findById(orderId).populate('items.product', 'name variants _id');
+            if (!order) {
+                return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+            }
+
+            // Xử lý bù: Nếu IPN chưa kịp chạy, ta tiến hành cập nhật kho và giỏ hàng ngay tại đây
+            if (order.paymentStatus === 'unpaid') {
+                if (rspCode === '00') {
+                    order.paymentStatus = 'paid';
+                    order.vnpayTransId = transId; 
+                    order.vnpayPayDate = payDate;
+                    await order.save();
+                    
+                    for (const item of order.items) {
+                        await Product.updateOne(
+                            { _id: item.product, "variants.color": item.color },
+                            { $inc: { "variants.$.quantity": -item.quantity, "variants.$.sold": item.quantity, "sold": item.quantity } }
+                        );
+                    }
+                    const itemsToRemove = order.items.map(item => ({ product: item.product, color: item.color }));
+                    if (itemsToRemove.length > 0) {
+                        await Cart.updateOne({ user: order.user }, { $pull: { items: { $or: itemsToRemove } } });
+                    }
+                } else {
+                    // Nếu thanh toán thất bại (hủy giữa chừng), xoá luôn đơn hàng nháp
+                    await Order.findByIdAndDelete(orderId);
+                }
+            }
+            
+            return res.status(200).json({ isSuccess: rspCode === '00', order });
+        } else {
+            return res.status(400).json({ message: 'Chữ ký VNPay không hợp lệ' });
+        }
+    } catch (error) {
+        console.error("VNPay Return Error:", error);
+        res.status(500).json({ message: 'Lỗi máy chủ khi xác thực thanh toán' });
+    }
+};

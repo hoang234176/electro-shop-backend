@@ -5,11 +5,11 @@ exports.infoFileUpload = async (req, res, next) => {
         }
         return res.status(200).json({
             message: "Tải ảnh lên thành công",
-            image: req.file.path,
+            image: req.file.secure_url || req.file.path,
             folder: req.file.folder
         })
     } catch (error) {
         console.error(error);
-        returnres.status(500).json({ message: 'Tải ảnh lên thất bại' });
+        return res.status(500).json({ message: 'Tải ảnh lên thất bại' });
     }
 }

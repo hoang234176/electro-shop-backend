@@ -10,6 +10,7 @@ const { uploadProduct } = require('../middlewares/uploadPicture')
 router.get('/users', verifyToken, verifyAdmin, adminController.userManager);
 router.delete('/users/:id', verifyToken, verifyAdmin, adminController.deleteUser);
 router.post('/addProduct', verifyToken, verifyAdmin, uploadProduct.array('variant_images', 20), adminController.addProducts)
+router.get('/products/all', verifyToken, verifyAdmin, adminController.getAllProductsDashBoard);
 router.delete('/products/:id', verifyToken, verifyAdmin, adminController.deleteProduct);
 router.put('/products/:id', verifyToken, verifyAdmin, uploadProduct.array('variant_images', 20), adminController.editProduct); 
 router.put('/products/:id/import', verifyToken, verifyAdmin, uploadProduct.array('variant_images', 20), adminController.importProduct);

@@ -10,8 +10,31 @@ const { getPublicIdFromUrl } = require('../utils/cloudinaryHelper');
 
 exports.userManager = async (req, res) => {
     try{
-        const data = await User.find();
-        res.status(200).json(data);
+        const { page, limit, search } = req.query;
+        let filter = {};
+
+        if (search) {
+            const searchRegex = new RegExp(search, 'i');
+            filter.$or = [
+                { email: searchRegex },
+                { fullname: searchRegex },
+                { username: searchRegex }
+            ];
+        }
+
+        if (page && limit) {
+            const pageNum = Number(page) || 1;
+            const limitNum = Number(limit) || 5;
+            const totalUsers = await User.countDocuments(filter);
+            const totalPages = Math.ceil(totalUsers / limitNum);
+            const users = await User.find(filter)
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum);
+            return res.status(200).json({ users, currentPage: pageNum, totalPages });
+        }
+
+        const users = await User.find(filter);
+        res.status(200).json(users);
     } catch (error){
         console.error(error);
         res.status(500).json({ message: 'Server error' });
@@ -110,7 +133,7 @@ exports.addProducts = async (req, res) => {
                 color: variant.color,
                 storage: variant.storage,
                 quantity: variant.quantity,
-                image: uploadedFiles[index] ? uploadedFiles[index].path : '' // Lấy URL ảnh nếu có
+                image: uploadedFiles[index] ? (uploadedFiles[index].secure_url || uploadedFiles[index].path) : '' // Lấy URL ảnh nếu có
             };
         });
 
@@ -180,7 +203,7 @@ exports.editProduct = async (req, res) => {
             const existingVariant = product.variants.find(v => v.color === variant.color);
             
             if (variant.isNewImage && uploadedFiles[fileIndex]) {
-                finalImage = uploadedFiles[fileIndex].path;
+                finalImage = uploadedFiles[fileIndex].secure_url || uploadedFiles[fileIndex].path;
                 fileIndex++;
             }
 
@@ -252,7 +275,7 @@ exports.importProduct = async (req, res) => {
                         await cloudinary.uploader.destroy(publicId).catch(err => console.error("Lỗi xóa ảnh cũ:", err));
                     }
                 }
-                finalImage = uploadedFiles[fileIndex].path;
+                finalImage = uploadedFiles[fileIndex].secure_url || uploadedFiles[fileIndex].path;
                 fileIndex++;
             }
             
@@ -297,7 +320,42 @@ exports.getAllOrders = async (req, res) => {
             createdAt: { $lt: thirtyMinutesAgo }
         });
 
-        const orders = await Order.find({})
+        const { page, limit, search, status } = req.query;
+        let filter = {};
+
+        if (status && status !== 'all') {
+            if (status === 'cancel_request') filter.cancelRequest = true;
+            else filter.orderStatus = status;
+        }
+
+        if (search) {
+            const searchRegex = new RegExp(search, 'i');
+            // Tìm kiếm User xem có tên khách hàng nào khớp từ khóa không
+            const users = await User.find({ $or: [{ fullname: searchRegex }, { phone: searchRegex }] });
+            const userIds = users.map(u => u._id);
+            
+            filter.$or = [
+                { user: { $in: userIds } },
+                // Tìm kiếm theo một phần của ID đơn hàng
+                { $expr: { $regexMatch: { input: { $toString: "$_id" }, regex: search, options: "i" } } }
+            ];
+        }
+
+        if (page && limit) {
+            const pageNum = Number(page) || 1;
+            const limitNum = Number(limit) || 5;
+            const totalOrders = await Order.countDocuments(filter);
+            const totalPages = Math.ceil(totalOrders / limitNum);
+            const orders = await Order.find(filter)
+                .populate('user', 'fullname phone email')
+                .populate('items.product', 'name variants _id')
+                .sort({ createdAt: -1 })
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum);
+            return res.status(200).json({ orders, currentPage: pageNum, totalPages });
+        }
+
+        const orders = await Order.find(filter)
             .populate('user', 'fullname phone email')
             .populate('items.product', 'name variants _id')
             .sort({ createdAt: -1 });
@@ -415,3 +473,41 @@ exports.updateOrderStatus = async (req, res) => {
         res.status(500).json({ message: 'Lỗi máy chủ.' });
     }
 };
+
+exports.getAllProductsDashBoard = async (req, res) => {
+    try {
+        const { page, limit, search } = req.query;
+        let filter = {};
+
+        if (search) {
+            filter.name = new RegExp(search, 'i');
+        }
+
+        if (page && limit) {
+            const pageNum = Number(page) || 1;
+            const limitNum = Number(limit) || 5;
+            const totalProducts = await Product.countDocuments(filter);
+            const totalPages = Math.ceil(totalProducts / limitNum);
+            const products = await Product.find(filter)
+                .populate('category', 'name')
+                .populate('brand', 'name')
+                .sort({ createdAt: -1 })
+                .skip((pageNum - 1) * limitNum)
+                .limit(limitNum);
+            return res.status(200).json({
+                products,
+                currentPage: pageNum,
+                totalPages
+            });
+        }
+
+        const products = await Product.find(filter)
+            .populate('category', 'name')
+            .populate('brand', 'name')
+            .sort({ createdAt: -1 });
+        res.status(200).json(products);
+    } catch (error) {
+        console.error('Lỗi khi lấy tất cả sản phẩm:', error);
+        res.status(500).json({ message: 'Lỗi máy chủ khi lấy tất cả sản phẩm.' });
+    }
+}
