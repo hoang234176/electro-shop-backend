@@ -80,16 +80,9 @@ exports.getProducts = async (req, res) => {
 
 exports.getNewProducts = async (req, res) => {
     try {
-        // --- Lấy sản phẩm trong vòng 14 ngày gần nhất ---
-        const daysAgo = 14;
-        const pastDate = new Date();
-        pastDate.setDate(pastDate.getDate() - daysAgo);
-
-        // Sắp xếp theo thời gian tạo (createdAt: -1 là mới nhất lên đầu)
-        // Lấy 8 sản phẩm cho mục "Sản phẩm mới ra mắt" ở trang chủ
-        const data = await Product.find({
-            createdAt: { $gte: pastDate } // $gte = greater than or equal (ngày tạo phải lớn hơn hoặc bằng ngày cách đây 14 ngày)
-        }).sort({ createdAt: -1 }).limit(4);
+        // Lấy 4 sản phẩm mới nhất
+        // Việc sắp xếp giảm dần theo thời gian tạo và giới hạn 4 sẽ luôn trả về 4 sản phẩm mới nhất (tự động bù sản phẩm cũ hơn nếu những ngày gần đây ít sản phẩm)
+        const data = await Product.find().sort({ createdAt: -1 }).limit(4);
         
         res.status(200).json(data);
     } catch (error) {
